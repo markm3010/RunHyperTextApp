@@ -1,0 +1,854 @@
+<html>
+<SCRIPT LANGUAGE="VBScript">
+
+Option Explicit
+On Error Resume Next 
+
+CONST CANCEL = 2
+CONST TKS_TESTS  =  "\C\KingdomSuite\testscripts"
+CONST STD_FILE_NAME  =  "start_test_pass.bat"
+CONST TESTS_RUNNING_FLAG  =  "tks_tests.txt"
+CONST VER_7_6_32BIT_STRING  =  "TKS 7.6-32"
+CONST VER_8_0_32BIT_STRING  =  "TKS 8.0-32"
+CONST VER_8_0_64BIT_STRING  =  "TKS 8.0-64"
+CONST DIR_7_6  = "tks_scripts_7.6\"
+CONST DIR_8_0  =  "tks_scripts_8.0\"
+CONST FILE_7_6  =  "tks_scripts_7.6\machine_files_7.6.ini"
+CONST FILE_8_0  =  "tks_scripts_8.0\machine_files_8.0.ini"
+CONST FORCE_DELETE_FLAG  =  True
+CONST READFILE  =  1
+CONST DONE_SEARCH_STR = "\[DONE\]"
+CONST DONE_STR = "[DONE]"
+CONST YES = "yes"
+CONST NO = "no"
+CONST UNKNOWN = "unknown"
+CONST OK_BUTTON_ONLY = 0
+CONST TITLEBAR_TEXT = "RunTests"
+CONST VERSION76_32BIT_FILE  = "runver76.txt"
+CONST VERSION80_32BIT_FILE  = "runver80.txt"
+CONST VERSION80_64BIT_FILE  = "runver80_64.txt"
+CONST RUNVER_FILE = "\runver.txt" 
+CONST TMP_FILE_NAM = "\tks_loc_tmp_file.txt"
+CONST OVERWRITE = True
+CONST START_STRING = "start_"
+CONST TASK_LIST = "tasklist_out.txt"
+Dim gCurrentWorkingDir
+
+Sub SetAbsoluteCWD
+	Dim FSO
+	
+	Set FSO = CreateObject("Scripting.FileSystemObject")
+	gCurrentWorkingDir = FSO.GetAbsolutePathName(".")
+End Sub
+' ----------------------------------------------------------------------------------------------------
+Sub Window_Onload
+   self.Focus()
+   self.ResizeTo 480,650
+End Sub
+' ----------------------------------------------------------------------------------------------------
+Sub RunCheckerScript
+	Dim running
+	Dim objItem
+	Dim thisMachinesFlagFile
+	Dim currentString
+	Dim newObj
+	Dim BoolSomethingSelected, PrintMessages
+	PrintMessages = True
+	BoolSomethingSelected = False
+	Dim List
+	
+	For Each objItem in MachineList1.Options
+		If objItem.Selected Then
+			BoolSomethingSelected = True
+			newObj = MachineNameOnly(objItem.Value)
+			running = IsTestRunning(newObj, PrintMessages)
+			If running = YES Then
+				currentString = currentString & newObj & ": Tests Running - YES" & vbCrLf
+			ElseIF running = NO Then
+				currentString = currentString & newObj & ": Tests Running - NO" & vbCrLf
+			Else
+				currentString = currentString & newObj & ": Tests Running - - UNKNOWN" & vbCrLf
+			End If
+		End If
+	Next
+	
+	For Each objItem in MachineList2.Options
+		If objItem.Selected Then
+			BoolSomethingSelected = True
+			newObj = MachineNameOnly(objItem.Value)
+			running = IsTestRunning(newObj, PrintMessages)
+			If running = YES Then
+				currentString = currentString & newObj & ": Tests Running - YES" & vbCrLf
+			ElseIF running = NO Then
+				currentString = currentString & newObj & ": Tests Running - NO" & vbCrLf
+			Else
+				currentString = currentString & newObj & ": Tests Running - UNKNOWN" & vbCrLf
+			End If
+		End If
+	Next
+	
+	If BoolSomethingSelected = True Then
+		MsgBox currentString, OK_BUTTON_ONLY, TITLEBAR_TEXT
+	Else
+		MsgBox "Please select at least one machine to check status on...", OK_BUTTON_ONLY, TITLEBAR_TEXT
+	End If
+End Sub
+ ' ----------------------------------------------------------------------------------------------------
+' Calls each set of selected machines, first checking for errors, then passing to the function that will execute.
+Sub RunScript
+	Dim BoolSomethingSelected1, BoolSomethingSelected2, BoolSomethingCanBeStarted
+	Dim BoolAlreadyRunningSet, BoolLandedAtLeastOne, BoolDontRun, BoolRunTests, AlreadyRunningSet
+	Dim Version, aLine, Machine, running, scriptName, objItem, PrintMessages, BoolDirectoryError, FSO
+	Dim strBuildNum
+	PrintMessages = True
+	BoolSomethingSelected1 = False
+	BoolSomethingSelected2 = False
+	BoolSomethingCanBeStarted = False
+	BoolAlreadyRunningSet = False
+	BoolLandedAtLeastOne = False
+	BoolRunTests = True
+	BoolDirectoryError = False
+	
+	SetAbsoluteCWD()
+	'msgbox gCurrentWorkingDir
+	'exit sub
+	Version = VersionList.Value
+	If Len (Version) < 1 Then
+		MsgBox "Please select a version.", OK_BUTTON_ONLY, TITLEBAR_TEXT
+		Exit Sub
+	End If
+	
+	Set FSO = CreateObject("Scripting.FileSystemObject")
+	For Each objItem in MachineList1.Options
+		If objItem.Selected Then
+			Machine = MachineNameOnly(objItem.Value)
+			BoolSomethingSelected1 = True
+			
+			If (FSO.FolderExists("\\" & Machine & TKS_TESTS) = False) Then
+				BoolDirectoryError = True
+				msgbox "Error: Cannot read ""testscripts"" directory on: " & Machine & vbcrlf & "No tests have been started.", OK_BUTTON_ONLY, TITLEBAR_TEXT
+				Exit Sub
+		End If
+			
+			running = IsTestRunning(Machine, PrintMessages)
+			If running <> YES Then
+				BoolSomethingCanBeStarted = True
+			Else 
+				AlreadyRunningSet = AlreadyRunningSet & Machine & vbCrLf
+				BoolAlreadyRunningSet = True
+			End If
+		
+			aLine = GetCurrentScript(Machine, Version)
+			If aLine = False Then
+				Exit Sub '   "GetCurrentScript" will display the error message
+			End If
+		
+			scriptName = parseLine(aLine)
+			If scriptName = False Then
+				Exit Sub  ' "parseLine" will display the error message
+			End If
+		End If
+	Next
+
+	For Each objItem in MachineList2.Options
+		
+		If objItem.Selected Then
+			Machine = MachineNameOnly(objItem.Value)
+			BoolSomethingSelected2 = True
+		
+		If (FSO.FolderExists("\\" & Machine & TKS_TESTS) = False) Then
+			BoolDirectoryError = True
+			msgbox "Error: Cannot read ""testscripts"" directory on: " & Machine & vbcrlf & "No tests were started.", OK_BUTTON_ONLY, TITLEBAR_TEXT
+			Exit Sub
+		End If
+		
+			running = IsTestRunning(Machine, PrintMessages)
+			If running <> YES Then
+				BoolSomethingCanBeStarted = True
+			Else 
+				AlreadyRunningSet = AlreadyRunningSet & Machine & vbCrLf
+				BoolAlreadyRunningSet = True
+			End If
+		
+			aLine = GetCurrentScript(Machine, Version)
+			If aLine = False Then
+				Exit Sub '   "GetCurrentScript" will display the error message
+			End If
+		
+			scriptName = parseLine(aLine)
+			If scriptName = False Then
+				Exit Sub  ' "parseLine" will display the error message
+			End If
+		End If
+	Next
+	
+	' After both sets of data are read, then do the following
+	If BoolSomethingSelected1 = False and BoolSomethingSelected2 = False Then
+		MsgBox "Please select at least one machine.", OK_BUTTON_ONLY, TITLEBAR_TEXT
+		BoolRunTests = False
+		' just to keep following msg from printing...
+		BoolSomethingCanBeStarted = True
+	End If
+	
+	If BoolSomethingCanBeStarted = False Then
+		MsgBox "All machines appear to be running tests.", OK_BUTTON_ONLY, TITLEBAR_TEXT
+		BoolRunTests = False
+		BoolAlreadyRunningSet = False
+	End If
+	
+	If BoolAlreadyRunningSet = True Then
+		MsgBox "The following are already running tests:" & vbcrlf & AlreadyRunningSet
+	End If
+	
+	If BoolSomethingSelected1 = True and BoolRunTests = True Then
+		BoolRunTests = BeginRunningTests(MachineList1)
+		If BoolSomethingSelected2 = True and BoolRunTests = True Then
+			BeginRunningTests(MachineList2)
+		End If
+	ElseIF BoolSomethingSelected1 = False and BoolRunTests = True Then
+		If BoolSomethingSelected2 = True Then
+			BeginRunningTests(MachineList2)
+		End If
+	End If
+	
+	
+End Sub
+' ----------------------------------------------------------------------------------------------------
+Function BeginRunningTests(strMachinesInList)
+	Dim objShell, objItem, FileHandleDest
+	Dim strStartSet, AlreadyRunningSet, theBuildNum
+	Dim FSO, currentString, SourceFile, Line
+	Dim Machine, running, BoolSomethingSelected
+	Dim BoolAlreadyRunningSet, BoolRunMe, PrintMessages
+	Dim Version, aLine, DestDir, DestDirVer, i, SelectedSet
+	Dim isLanded, scriptName, delFileFirst, delVerFileFirst, BoolLandedAtLeastOne
+	PrintMessages = False
+
+	' List of files that get copied to the target
+	CONST FILECOUNT = 5 ' these two #'s need to be the same...
+	Dim FileArray(5)	
+	FileArray(0) = "KillDialog.bat"
+	FileArray(1) = "KillDialog.pc6"
+	FileArray(2) = "remove_pause.vbs"
+	FileArray(3) = "process.exe"
+	FileArray(4) = "KillDialog2.bat"
+	FileArray(5) = "KillDialog2.pc6"
+	
+	Set objShell = CreateObject("WScript.shell")
+	Set FSO = CreateObject("Scripting.FileSystemObject")
+
+	BoolLandedAtLeastOne = False
+	BoolSomethingSelected = False
+	BoolAlreadyRunningSet = False
+	
+	If buildNumber.Value = "Latest"  or buildNumber.Value = "" Then
+		thebuildNum = ""
+		strStartSet = vbcrlf & "Build: LATEST" & vbcrlf
+		' strStartSet = strStartSet & objItem.Value & ", build:Latest" & vbCrLf
+	Else
+		Dim objRegExpVer, bMatch, Reply
+		Set objRegExpVer = New RegExp
+		objRegExpVer.Global = True
+		objRegExpVer.IgnoreCase = True
+		objRegExpVer.Pattern = "^\s*[0-9]{4,}(\.)?" ' This regex MUST match the one in remove_pause.vbs !!!  (search for "This regex MUST" to find the line)
+		bMatch = objRegExpVer.Test(buildNumber.Value) 
+		
+		if bMatch = True Then
+			thebuildNum = "build:" & buildNumber.Value
+			strStartSet = vbcrlf & "Build: " & buildNumber.Value & vbcrlf
+		Else
+			Reply = MsgBox ("Error reading build number, defaulting to Latest Build." & vbcrlf & vbcrlf & "Either leave the ""Latest"" text, enter a valid build number," & vbcrlf & "or clear the text field to run the latest build."  & vbcrlf & vbcrlf & "A valid build number contains 4 or more numbers," & vbcrlf & "followed by an optional ""dot"" and a minor version string." & vbcrlf & vbcrlf & "Continue and default to latest build?", vbYesNo, TITLEBAR_TEXT)
+			If Reply = 6 Then   ' answer was yes
+				thebuildNum = ""
+				strStartSet = vbcrlf & "Build: LATEST" & vbcrlf
+			Else ' answer was no
+				Exit Function
+			End If	
+		End If
+	End If
+	
+	For Each objItem in strMachinesInList.Options
+		BoolRunMe = False
+		If objItem.Selected Then
+			Machine = MachineNameOnly(objItem.Value)
+			SelectedSet = SelectedSet & objItem.Value & vbCrLf
+			
+			' Only go with machines in NO or UNKOWN state
+			running = IsTestRunning(Machine, PrintMessages)
+			if running = NO Then
+				BoolRunMe = True
+				BoolSomethingSelected = True
+				strStartSet = strStartSet & "  " & objItem.Value & vbCrLf
+			ElseIf running = YES Then
+				msgBox "ERROR: Cannot start tests on " & Machine & " because it is already running tests", OK_BUTTON_ONLY, TITLEBAR_TEXT
+			Else ' must be unnknown status
+				msgBox "ERROR: Cannot start tests on " & Machine & " because the listener is not running on that machine." & vbcrlf & "Check that  ""listen.bat"" is running, and that it is waiting for the ""start_" & Machine & """ signal.",  OK_BUTTON_ONLY, TITLEBAR_TEXT
+			End If
+			
+			If BoolRunMe = True Then
+				' Get the rigt line from the DB based on the ini file...
+				Version = VersionList.Value
+				aLine = GetCurrentScript(Machine, Version)
+				' parse the line to get the actual script name, i.e. get 'script' in line containing "machine: script".
+				scriptName = parseLine(aLine)
+				' copy some files over to the target machine
+				For i = 0 to FILECOUNT
+					DestDir = "\\" & Machine & TKS_TESTS & "\" & FileArray(i)
+					
+					If (FSO.FileExists(DestDir)) Then
+						Set delFileFirst = FSO.GetFile(DestDir)
+						' If Tester.checked = True Then MsgBox "INFO: About to delete: " & DestDir, OK_BUTTON_ONLY, TITLEBAR_TEXT
+						delFileFirst.Delete(True)
+					End If
+					
+					' If Tester.checked = True Then MsgBox "INFO: About to copy: " & FileArray(i) & " to: " & DestDir, OK_BUTTON_ONLY, TITLEBAR_TEXT
+					FSO.CopyFile FileArray(i), DestDir, OVERWRITE
+				Next
+				
+				If Version = VER_7_6_32BIT_STRING Then 
+					Line = "TKS76" & vbcrlf & theBuildNum ' SourceFile = VERSION76_32BIT_FILE
+				ElseIf Version = VER_8_0_32BIT_STRING Then
+					Line = "TKS80" & vbcrlf & theBuildNum ' SourceFile = VERSION80_32BIT_FILE
+				ElseIf Version = VER_8_0_64BIT_STRING Then
+					Line = "TKS80_64" & vbcrlf & theBuildNum ' SourceFile = VERSION80_64BIT_FILE
+				Else
+					BeginRunningTests = False
+					MsgBox "Internal Error: Version Selected is not found: " & Version
+					Exit Function
+				End If
+					
+				DestDirVer = "\\" & Machine & TKS_TESTS & RUNVER_FILE
+				
+				If (FSO.FileExists(DestDirVer)) Then
+					Set delVerFileFirst = FSO.GetFile(DestDirVer)
+					' If Tester.checked = True Then MsgBox "INFO: About to delete: " & DestDirVer, OK_BUTTON_ONLY, TITLEBAR_TEXT
+					delVerFileFirst.Delete(True)
+				End If
+				
+				Set FileHandleDest = FSO.CreateTextFile(DestDirVer, OVERWRITE)
+				FileHandleDest.WriteLine(Line) ' writes the TKS version to run, and build number -- this is consumed by remve_pause.vbs
+				FileHandleDest.Close
+
+				isLanded = landScript(scriptName, Machine, Version)
+				If isLanded = True Then
+					BoolLandedAtLeastOne = True
+					objShell.run "waitfor -s "  & objItem.Value
+				End If
+				
+			End If
+		End If
+	Next
+	
+	If BoolSomethingSelected = True Then
+		MsgBox "Sent signals to start tests on all the following machines (machines running tests or not running a listener were skipped):" & vbCrLf & strStartSet, OK_BUTTON_ONLY, TITLEBAR_TEXT
+	End If
+End Function
+' ----------------------------------------------------------------------------------------------------
+Sub CancelScript
+   Self.Close()
+End Sub
+' ----------------------------------------------------------------------------------------------------
+' returns 'machineName' when given string like 'start_machineName' (without single quotes of course)
+Function MachineNameOnly(start_machineName)
+	Dim reg
+	Dim FSO
+	
+	Set reg = New RegExp
+	reg.Pattern = START_STRING
+	Set FSO = CreateObject("Scripting.FileSystemObject")
+	MachineNameOnly = reg.Replace(start_machineName, "")
+End Function
+' ----------------------------------------------------------------------------------------------------
+' returns 'machineName' when given string like 'start_machineName' (without single quotes of course)
+Function AssembleSignalName(machineName)
+	Dim Signal
+	Signal = START_STRING & machineName
+	AssembleSignalName = Signal
+End Function
+
+' ----------------------------------------------------------------------------------------------------
+Sub HTASleep(intSeconds)
+  Dim objShell, strCommand
+
+  Set objShell = CreateObject("Wscript.Shell")
+
+  strCommand = "%COMSPEC% /c ping -n " & 1 + intSeconds & " 127.0.0.1>nul"
+  ' strCommand = "%COMSPEC% /c ping -n 1 -w " & intSeconds & " 127.0.0.0>nul"
+  objShell.Run strCommand, 0, True
+
+  Set objShell = Nothing
+End Sub
+' ----------------------------------------------------------------------------------------------------
+' returns true if tks_tests.txt exists on machineName, false if it does Not
+Function IsTestRunning(machineName, BoolPrintMsgs)
+	Dim FSO, FileHandle, signal
+	Dim thisMachinesFlagFile, objShell
+	Dim objRegExp, Line, bMatch, Wscript
+	Dim RunFile, localTaskListFile, remoteTaskListFile, TFile
+	CONST WRITE = 2
+	CONST CREATE_NEW = True
+	
+	SetAbsoluteCWD()
+	TFile = "localTaskListFile.bat"
+	localTaskListFile = gCurrentWorkingDir & "\" & TFile
+	Set objShell = CreateObject("WScript.shell")
+	Set FSO = CreateObject("Scripting.FileSystemObject")
+	remoteTaskListFile = "\\" & machineName & TKS_TESTS & "\" & TASK_LIST
+	' msgbox remoteTaskListFile
+	If (FSO.FileExists(remoteTaskListFile)) Then FSO.DeleteFile(remoteTaskListFile)
+	If (FSO.FileExists(localTaskListFile)) Then FSO.DeleteFile(localTaskListFile)
+
+	
+	Set FileHandle = FSO.OpenTextFile(localTaskListFile, WRITE, CREATE_NEW)
+	FileHandle.WriteLine "tasklist /fi ""ImageName eq mtrun.exe*"" > " & TASK_LIST & vbcrlf & "sleep 2" & vbcrlf & "exit" & vbcrlf
+	FileHandle.Close
+
+	RunFile = "\\" & machineName & TKS_TESTS & "\" & STD_FILE_NAME
+	If (FSO.FileExists(RunFile) = True) Then
+		FSO.DeleteFile RunFile, FORCE_DELETE_FLAG
+	End If
+		
+	If FSO.FolderExists("\\" & machineName & TKS_TESTS) Then
+		FSO.CopyFile localTaskListFile, RunFile, OVERWRITE
+	Else
+		msgbox "Error: Cannot read ""testscripts"" directory on: " & machineName & vbcrlf & vbcrlf & "Cannot detect run status.", OK_BUTTON_ONLY, TITLEBAR_TEXT
+		IsTestRunning = UNKNOWN
+		Exit function
+	End If
+		' execute a signal call so the target machine executes it.
+	signal = AssembleSignalName(machineName)
+	objShell.Run("waitfor -s " &  signal)
+	thisMachinesFlagFile = "\\" & machineName & TKS_TESTS & "\" & TASK_LIST
+	
+	Call HTASleep(2) ' wait for file redirection to complete creation of file on target machine
+	If FSO.FileExists(thisMachinesFlagFile) Then
+		Set FileHandle = FSO.OpenTextFile(thisMachinesFlagFile, READFILE)
+		Set objRegExp = New RegExp
+		objRegExp.Global = True
+		objRegExp.IgnoreCase = False
+		objRegExp.Pattern = "mtrun.exe"
+		IsTestRunning = NO
+		Do While FileHandle.AtEndOfStream <> True
+			Line = FileHandle.ReadLine
+			bMatch = objRegExp.Test(Line)
+			If bMatch  = True Then
+				IsTestRunning = YES
+				FileHandle.Close
+				Exit Function
+			End If
+		Loop
+	Else
+		IsTestRunning = UNKNOWN
+		If BoolPrintMsgs = True Then
+			MsgBox "WARNING: " & machineName & " Tests Running - UNKNOWN" & vbcrlf &  "Cannot detect running status, because we cannot access " & thisMachinesFlagFile & vbcrlf & vbcrlf & "Be sure ""listen.bat"" is running, and the C: drive is shared with write priveleges for all.", OK_BUTTON_ONLY, TITLEBAR_TEXT
+		End If
+	End If
+End Function
+' ----------------------------------------------------------------------------------------------------
+Function parseLine(aLine)
+	Dim objRegExp
+	Dim regExp
+	Dim match
+	
+	Set objRegExp = New RegExp
+	objRegExp.Global = False ' false is the default anyway - we just want one match
+	objRegExp.IgnoreCase = False
+	regExp = "^\S+:\s*(\w+)"
+	objRegExp.Pattern = regExp
+	if objRegExp.Test(aLine) = False Then
+		MsgBox "ERROR: Could not find the batch file to land.:" & vbCrLf &  " Could not parse file >>" & aLine & "<<" & vbCrLf & vbCrLf & "Possible reason: line could be missing a colon...", OK_BUTTON_ONLY, TITLEBAR_TEXT
+		parseLine = False
+		Exit Function
+	End If	
+
+	match = objRegExp.Replace(aLine, "$1")
+	if Len(match) < 1 Then
+		MsgBox "ERROR: Could not find start.bat file in this line from the ini file:" & vbcrlf & aLine, OK_BUTTON_ONLY, TITLEBAR_TEXT
+		parseLine = False
+	Else
+		parseLine = match
+	End If
+End Function
+' ----------------------------------------------------------------------------------------------------
+' returns path + filename that matches machine and version from the DB based on the ini file...
+Function GetCurrentScript(aMachine, aVer)
+	Dim FileHandle, Line
+	Dim FSO, fullPath, FileToParse
+	Dim objRegExp, bMatch
+	
+	Set FSO   = CreateObject("Scripting.FileSystemObject")
+	If aVer = VER_7_6_32BIT_STRING Then
+		If FSO.FileExists(FILE_7_6) Then
+			fullPath = gCurrentWorkingDir & "\" & FILE_7_6
+			Set FileHandle = FSO.OpenTextFile(fullPath, READFILE)
+		Else
+			MsgBox "ERROR: Could not find file for reading: " & FILE_7_6 & ".", OK_BUTTON_ONLY, TITLEBAR_TEXT
+			GetCurrentScript = Null
+			Exit Function
+		End If
+	ElseIf aVer = VER_8_0_32BIT_STRING Or aVer = VER_8_0_64BIT_STRING Then
+		If FSO.FileExists(FILE_8_0) Then
+			fullPath = gCurrentWorkingDir & "\" & FILE_8_0
+			Set FileHandle = FSO.OpenTextFile(fullPath, READFILE)
+		Else
+			MsgBox "ERROR: Could not find file for reading: " & FILE_8_0 & ".", OK_BUTTON_ONLY, TITLEBAR_TEXT
+			GetCurrentScript = Null
+			Exit Function
+		End If
+	End If
+	
+	' If we are here, we have a handle to the right file, and just need to parse it and find
+	' the correct script to return to the caller.
+	Set objRegExp = New RegExp
+	objRegExp.Global = True
+	objRegExp.IgnoreCase = True
+	objRegExp.Pattern = aMachine
+	
+	Do While FileHandle.AtEndOfStream <> True
+		Line = FileHandle.ReadLine
+		bMatch = objRegExp.Test(Line)
+		If bMatch Then 
+			' parse for the filepath+filename
+			GetCurrentScript = Line
+			FileHandle.Close
+			Exit Function
+		End If
+	Loop
+	
+	MsgBox "ERROR: could not find " & aMachine & " listed in " & fullPath, OK_BUTTON_ONLY, TITLEBAR_TEXT
+	GetCurrentScript = False
+	FileHandle.Close
+End Function
+' ----------------------------------------------------------------------------------------------------
+' returns true if script landed, false if not
+Function landScript(aScript, aMachine, aVer)  
+	Dim SourceFileNameOnly, strDestination
+	Dim FSO, newPath, delFileFirst
+	
+	landScript = True
+	Set FSO   = CreateObject("Scripting.FileSystemObject")
+	If aVer = VER_8_0_32BIT_STRING Or aVer = VER_8_0_64BIT_STRING Then
+		newPath = gCurrentWorkingDir & "\" & DIR_8_0 & aScript
+		If (FSO.FileExists(newPath) = False) Then
+			MsgBox "ERROR: Could not find: " & vbcrlf & "   >>>" & newPath & "<<<" & vbcrlf & "Skipping test execution on: " & aMachine & " and continuing with next machine in the list", OK_BUTTON_ONLY, TITLEBAR_TEXT
+			landScript = False
+		End If
+	ElseIf aVer = VER_7_6_32BIT_STRING Then
+		newPath = gCurrentWorkingDir & "\" & DIR_7_6 & aScript
+		If (FSO.FileExists(newPath) = False) Then
+			MsgBox "ERROR: Could not find: " & newPath & "." & vbcrlf & "Skipping test execution on: " & aMachine & " and continuing with next machine in the list", OK_BUTTON_ONLY, TITLEBAR_TEXT
+			landScript = False
+		End If
+	End If
+	
+	If landScript = False Then Exit Function
+	
+	strDestination = "\\" & aMachine & TKS_TESTS & "\" & STD_FILE_NAME
+	If (FSO.FileExists(strDestination)) Then
+		Set delFileFirst = FSO.GetFile(strDestination)
+		' If Tester.checked = True Then MsgBox "INFO: Deleting: " & delFileFirst, OK_BUTTON_ONLY, TITLEBAR_TEXT
+		delFileFirst.Delete(True)
+	End If
+	
+	' If Tester.checked = True Then MsgBox "INFO: Copying: " & aScript & " to: " & strDestination, OK_BUTTON_ONLY, TITLEBAR_TEXT
+	FSO.CopyFile newPath, strDestination, True
+	landScript = True
+End Function
+' ----------------------------------------------------------------------------------------------------
+' run a kill script via sending a signal on all machines selected
+Sub KillScript
+	Dim Machine, Reply, printLine
+	Dim objItem, objShell, SomethingSelected
+	Dim RunFile, FSO, signal, FailListLine
+		
+	SetAbsoluteCWD()
+	Reply = MsgBox ("ARE YOU SURE?  This will KILL tests in progress on all selected machines.", vbOKCancel, TITLEBAR_TEXT)
+   
+	If Reply = CANCEL Then
+		Exit Sub
+ 	End If
+	SomethingSelected = False
+	Set objShell = CreateObject("WScript.shell")
+	Set FSO   = CreateObject("Scripting.FileSystemObject")
+
+	For Each objItem in MachineList1.Options
+		If objItem.Selected Then
+			SomethingSelected = True
+			Machine = MachineNameOnly(objItem.Value) 
+			
+			If (FSO.FolderExists("\\" & Machine & TKS_TESTS) = True) Then
+				' If Tester.checked = True Then MsgBox "INFO: Killing mt.exe, mtrun.exe, TKS.exe, and 2d3dpak.exe, and setting run status to ""NO"".", OK_BUTTON_ONLY, TITLEBAR_TEXT
+
+				' delete start_test_pass.bat
+				RunFile = "\\" & Machine & TKS_TESTS & "\" & STD_FILE_NAME
+				If (FSO.FileExists(RunFile) = True) Then
+					FSO.DeleteFile RunFile, FORCE_DELETE_FLAG
+				End If
+				' land runkillproc.bat as start_test_pass.bat
+				FSO.CopyFile "runkillproc.bat", RunFile, OVERWRITE
+				' execute a signal call so the target machine executes it.
+				signal = AssembleSignalName(Machine)
+				objShell.Run("waitfor -s " &  signal)
+				printLine = printLine & Machine & " - Kill Signals Sent" & vbcrlf
+			Else
+				msgbox "Error: Cannot read ""testscripts"" directory on: " & Machine & vbcrlf & "No processes were stopped on " & Machine, OK_BUTTON_ONLY, TITLEBAR_TEXT
+				printLine = printLine & Machine & " - Kill Signals NOT Sent" & vbcrlf
+			End If
+		End If
+	Next
+	
+	For Each objItem in MachineList2.Options
+		If objItem.Selected Then
+			SomethingSelected = True
+			Machine = MachineNameOnly(objItem.Value) 
+			
+			If (FSO.FolderExists("\\" & Machine & TKS_TESTS) = True) Then
+				' delete start_test_pass.bat
+				RunFile = "\\" & Machine & TKS_TESTS & "\" & STD_FILE_NAME
+					
+				If (FSO.FileExists(RunFile) = True) Then
+					FSO.DeleteFile RunFile, FORCE_DELETE_FLAG
+				End If
+					
+				' land runkillproc.bat as start_test_pass.bat
+				FSO.CopyFile "runkillproc.bat", RunFile, OVERWRITE
+				' execute a signal call so the target machine executes it.
+				signal = AssembleSignalName(Machine)
+				objShell.Run("waitfor -s " &  signal)
+				printLine = printLine & Machine & " - Kill Signals Sent" & vbcrlf
+			Else
+				msgbox "Error: Cannot read ""testscripts"" directory on: " & Machine & vbcrlf & "No processes were stopped on " & Machine, OK_BUTTON_ONLY, TITLEBAR_TEXT
+				printLine = printLine & Machine & " - Kill Signals NOT Sent" & vbcrlf
+			End If
+		End If
+	Next
+	
+	if SomethingSelected = False Then
+		MsgBox "Please select at least one machine to kill tests on.", OK_BUTTON_ONLY, TITLEBAR_TEXT
+		Exit Sub
+	End iF
+	
+	MsgBox printLine, OK_BUTTON_ONLY, TITLEBAR_TEXT
+	
+End Sub
+' ----------------------------------------------------------------------------------------------------
+' Add DONE_STR to TESTS_RUNNING_FLAG
+Function AddDoneLine(Machine)
+	Dim Reply, Running
+	Dim objItem, SomethingToDo, SomethingSelected
+	Dim FileToChange, FSO, FileHandleR, FileHandleW, Line
+	CONST CREATE_NEW = True
+	CONST DO_NOT_CREATE_NEW = False
+	CONST WRITE = 2
+	CONST READ  = 1
+	Dim TmpFile
+	TmpFile = "\\" & Machine & TKS_TESTS & TMP_FILE_NAM
+	Dim Msg
+	
+	Set FSO = CreateObject("Scripting.FileSystemObject")
+	Running = IsTestRunning(Machine, True)
+	
+	If Running = YES Then
+		FileToChange = "\\" & Machine & TKS_TESTS & "\" & TESTS_RUNNING_FLAG
+		'MsgBox "Setting " & Machine & " to ""done"" status...", OK_BUTTON_ONLY, TITLEBAR_TEXT
+		FSO.CopyFile FileToChange, TmpFile
+		FSO.DeleteFile(FileToChange)
+		Set FileHandleW = FSO.OpenTextFile(FileToChange, WRITE, CREATE_NEW)
+		Set FileHandleR = FSO.OpenTextFile(TmpFile, READ)
+		
+		Do While FileHandleR.AtEndOfStream <> True
+			Line = FileHandleR.ReadLine
+			FileHandleW.WriteLine Line 
+		Loop
+			
+		FileHandleW.WriteLine DONE_STR
+		FileHandleR.Close
+		FileHandleW.Close
+		FSO.DeleteFile(TmpFile)
+		Msg = Machine & " - Run Status Cleared"
+	Else
+		Msg = Machine & " - Was not in running Status"
+	End If
+	AddDoneLine = Msg
+End Function
+' ----------------------------------------------------------------------------------------------------
+Sub RunClearScript
+	Dim Machine, Reply
+	Dim objItem, SomethingSelected, retMsg, outputMsg
+	Dim FSO
+	
+	SetAbsoluteCWD()
+	Reply = MsgBox ("ARE YOU SURE?  The run status will be cleared even if tests are running on selected machines.", vbOKCancel, TITLEBAR_TEXT)
+	If Reply = CANCEL Then
+		Exit Sub
+	End If
+
+	SomethingSelected = False
+	Set FSO = CreateObject("Scripting.FileSystemObject")
+	
+	For Each objItem in MachineList1.Options
+		If objItem.Selected Then
+			SomethingSelected = True
+			Machine = MachineNameOnly(objItem.Value)
+			retMsg = AddDoneLine(Machine)
+			outputMsg = outputMsg & retMsg & vbcrlf
+		End If
+	Next
+	
+	For Each objItem in MachineList2.Options
+		If objItem.Selected Then
+			SomethingSelected = True
+			Machine = MachineNameOnly(objItem.Value)
+			retMsg = AddDoneLine(Machine)
+			outputMsg = outputMsg & retMsg & vbcrlf
+		End If
+	Next
+	
+	if SomethingSelected = False Then
+		MsgBox "Please select at least one machine to clear run status on.", OK_BUTTON_ONLY, TITLEBAR_TEXT
+		Exit Sub
+	End iF
+	
+	MsgBox outputMsg, OK_BUTTON_ONLY, TITLEBAR_TEXT
+	
+End Sub
+
+Sub CallCopyProgram
+	Dim objShell
+	Set objShell = CreateObject("WScript.shell")
+	objShell.run "copy_to_all.hta"
+End Sub
+
+</SCRIPT>
+<HEAD>
+<Title>RunTests.hta: Start Automated Tests on Multiple Machines</Title>
+
+<HTA:APPLICATION ID="objRunTests"
+    APPLICATIONNAME="RunTests"
+    SINGLEINSTANCE="no"
+	SCROLL="yes"
+>
+</HEAD>
+<BODY  bgcolor="silver" text="black">
+<center><B>Execute Tests, Stop Tests, and check Running Status on Selected Machines</B></center>
+<table align="center"  border="0" cellspacing="3" cellpadding="2">
+<!--
+<tr>
+<td valign="top">
+	<input type="checkbox" name="Tester" value="">
+</td>
+<td valign="top">
+	DEBUG ONLY - No tests are started or killed. Output dialogs display progress as all other actions are carried out.  This allows you to see where a failure is occuring by noting the dialog BEFORE the failure.
+</td>
+</tr>
+-->
+<tr>
+<td>
+<input type="textbox" name="buildNumber"   size="6" valign="top" value="Latest">
+</td>
+<td>
+<br>BUILD NUMBER - If no build number is entered, the latest build will be selected.  Enter a 4 digit number and an optional minor version string.
+</td>
+</tr>
+
+</table>
+
+<table align="center" border="0" cellspacing="3" cellpadding="5">
+
+<tr>
+	<th>Select a Version:</th>
+	<th>Select Machines:</th>
+</tr>
+	
+	
+<tr>
+<td valign="top">
+<select size="3" name="VersionList" size = 14 border="4">
+    
+	<option value="TKS 7.6-32">TKS 7.6 32-bit build</option>
+	<option value="TKS 8.0-32">TKS 8.0 32-bit build</option>
+	<option value="TKS 8.0-64">TKS 8.0 64-bit build</option>
+
+</select>
+
+</td>
+
+	<td valign="top">
+	
+<select size="16" name="MachineList1" size = 14 multiple border="4"> 
+    
+	<option value="start_cheetah2">Cheetah2</option>
+	<option value="start_mark-m-x64">mark-m-x64</option>
+	<option value="start_sharon-test2k">Sharon-test2k</option>
+	<option value="start_test-900">Test-900</option>
+	<option value="start_test_1">Test_1</option>
+	<option value="start_test_2">Test_2</option>
+	<option value="start_test_3">Test_3</option>
+	<option value="start_test_4">Test_4</option>
+	<option value="start_testbox-aces2k">Testbox-aces2k</option>
+	<option value="start_testbox_ibm">Testbox_ibm</option>
+	<option value="start_testbox-oracle">Testbox-oracle</option>
+	<option value="start_testboxsql2">Testboxsql2</option>
+	<option value="start_testbox-temp1">Testbox-temp1</option>
+	<option value="start_testbox-temp3">Testbox-temp3</option>
+	<option value="start_testbox-tunnel">Testbox-tunnel</option>
+	<option value="start_testbox_xp">Testbox_xp</option>
+	<option value="start_testx32-2">Testx32-2</option>
+	<option value="start_test-32on64-1">test-32on64-1</option>
+	<option value="start_test-32on64-2">test-32on64-2</option>
+</select>
+&nbsp;
+<select size="16" name="MachineList2" size = 14 multiple border="4"> 
+	<option value="start_testrack-1">testrack-1</option>
+	<option value="start_testrack-2">testrack-2</option>
+	<option value="start_testrack-3">testrack-3</option>
+	<option value="start_testrack-4">testrack-4</option>
+	<option value="start_testrack-5">testrack-5</option>
+	<option value="start_testrack-6">testrack-6</option>
+	<option value="start_testrack-7">testrack-7</option>
+	<option value="start_testrack-8">testrack-8</option>
+	<option value="start_testrack-9">testrack-9</option>
+	<option value="start_testrack-10">testrack-10</option>
+	<option value="start_testrack-11">testrack-11</option>
+	<option value="start_testrack-12">testrack-12</option>
+	<option value="start_testrack-13">testrack-13</option>
+	<option value="start_testrack-14">testrack-14</option>
+	<option value="start_testx64-1">Testx64-1</option>
+	<option value="start_testx64-2">Testx64-2</option>
+	<option value="start_testx64-3">Testx64-3</option>
+	<option value="start_testx64-4">Testx64-4</option>
+</select>
+
+
+</td>
+</tr>
+</table>
+<br>
+
+<center>
+<input id="checkbutton" class="button" type="button" value="Check Run Status" name="check_button" 
+onClick="RunCheckerScript">
+<!--<br>
+
+<input id="clearbutton" class="button" type="button" value=" Clear Run Status " name="clear_button" 
+onClick="RunClearScript">-->
+<br>
+
+<input type="button" name="kill_button" id="killbutton" value="   Kill Tests   "
+  class="button" style="border-color: #DC143C #DC143C #DC143C #DC143C;" onClick="KillScript">
+<br>
+
+<font color=red>
+<input id="runbutton" class="button" type="button" value="  Run Tests  " name="ok_button" 
+onClick="RunScript"></font>
+<br>
+
+<input id="callcopy" class="button" type="button" value=" Copy a File " name="callcopy_button" 
+onClick="CallCopyProgram">
+<br>
+
+<input id="cancelbutton" class="button" type="button" value="  Exit  " name="cancel_button" 
+onClick="CancelScript">
+</center>
+</BODY>
+</html>

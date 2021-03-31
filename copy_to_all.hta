@@ -1,0 +1,197 @@
+<html>
+<SCRIPT LANGUAGE="VBScript">
+
+Option Explicit 
+
+Sub Window_Onload
+   self.Focus()
+   self.ResizeTo 500,580
+End Sub
+
+Sub RunScript
+	Dim FSO, FSO_2
+	Dim CurrentMachine
+	Dim SourcePathAndFileName
+	Dim SourceFileNameOnly
+	Dim DestinationDir
+	Dim MachineStream
+	Dim objFileCopy
+	Dim strDestination, objItem, Reply, delFileFirst
+
+	Set FSO = CreateObject("Scripting.FileSystemObject")
+	Set FSO_2 = CreateObject("Scripting.FileSystemObject")
+	
+	SourcePathAndFileName = SrcFile.Value
+	If SourcePathAndFileName = "" Then
+		MsgBox "Source file field is empty.   Please select a file to copy."
+		Exit Sub
+	End If
+	
+	'If ((FSO.FileExists(SourcePathAndFileName)) = False) Then
+		'MsgBox "Source File: " & SourcePathAndFileName & ": not found.  Try again"
+		'Exit Sub
+	'End If
+		
+	SourceFileNameOnly = Mid(SourcePathAndFileName, InStrRev(SourcePathAndFileName, "\") + 1)
+	DestinationDir = Destination.Value
+	If DestinationDir = "" Then
+		MsgBox "Destination Directory field is empty.  Please choose a directory to land the file."
+		Exit Sub
+	End If
+	
+	' New Stuff
+	For Each objItem in TheMachineList1.Options
+		If objItem.Selected Then
+			On Error Resume Next
+			strDestination = "\\" & objItem.Value & "\" & DestinationDir & "\" ' & SourceFileNameOnly
+			Reply = MsgBox ("Copy " & SourceFileNameOnly & " to " & objItem.Value & "?", vbYesNoCancel)
+			If Reply = 6 Then   ' answer was yes
+				ClearReadBit strDestination, SourceFileNameOnly
+				'FSO_2.DeleteFile strDestination & SourceFileNameOnly, True
+				FSO_2.CopyFile SourcePathAndFileName, strDestination, True
+			ElseIf Reply = 7 Then  ' answer was no
+				' do nothing
+			Else
+				Exit Sub
+			End If			
+		End If
+	Next
+	
+	For Each objItem in TheMachineList2.Options
+		If objItem.Selected Then
+			On Error Resume Next
+			strDestination = "\\" & objItem.Value & "\" & DestinationDir & "\" ' & SourceFileNameOnly
+			Reply = MsgBox ("Copy " & SourceFileNameOnly & " to " & objItem.Value & "?", vbYesNoCancel)
+			If Reply = 6 Then   ' answer was yes
+				If (FSO.FileExists(strDestination & SourceFileNameOnly)) Then
+					Set delFileFirst = FSO.GetFile(strDestination)
+					delFileFirst.Delete(True)
+				End If
+				FSO_2.CopyFile SourcePathAndFileName, strDestination, True
+			ElseIf Reply = 7 Then  ' answer was no
+				' do nothing
+			Else
+				Exit Sub
+			End If			
+		End If
+	Next
+	
+	MsgBox "Done"
+End Sub
+
+Sub CancelScript
+   Self.Close()
+End Sub
+
+Function ClearReadBit(myPath, FilePattern)
+	Dim fso, f, fl, fc, s
+   	Dim myRegEx, bMatch, Reply
+	' msgbox "myPath: " & myPath & " FilePattern: " & FilePattern
+	Set myRegEx = New RegExp
+	myRegEx.Global = True
+	myRegEx.IgnoreCase = True
+	myRegEx.Pattern = FilePattern
+	myPath = Left(myPath, Len(myPath) - 1)
+	msgBox "myPath: " & myPath
+	Set fso = CreateObject("Scripting.FileSystemObject")
+	Set f = fso.GetFolder(myPath)
+	msgbox "Path: " & f.Path & vbcrlf & "Date: " & f.DateCreated
+	
+	Set fc = f.Files
+	msgbox "fc.count: " & fc.count
+	For Each fl in fc
+		msgbox "fl.name: " & fl.name
+		bMatch = myRegEx.Test(fl.name) 
+
+		If bMatch = True Then
+			msgbox "match found: " & fl.name
+			If fl.attributes and 1 Then
+				msgbox "attribute of read only found: " & fl.name
+				fl.attributes = fl.attributes - 1
+			End If
+		End If
+	Next
+End Function
+
+</SCRIPT>
+
+<HEAD>
+<Title>Copy a File to Multiple Machines</Title>
+
+<HTA:APPLICATION ID="objRunTests"
+    APPLICATIONNAME="RunTests"
+    SINGLEINSTANCE="no"
+	SCROLL="no"
+>
+
+</HEAD>
+<BODY  bgcolor="silver" text="black">
+Enter Source File (including path):<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+<input type="file" name="SrcFile" size="40"> <!--<input type="textbox" INPUT name="SrcFile" size="30">-->
+<br><br>
+
+Enter the shared destination directory to copy the file To (please leave<br>
+out the colon if the path starts with a drive letter i.e. use "c\", not "c:\"):
+<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+<input type="textbox" name="Destination"   size="30" value="C\KingdomSuite\testscripts"><BR><BR>
+
+Select the machines that the file will be copied to:<br><br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+<select size="16" name="TheMachineList1" size = 14 multiple border="4"> 
+    
+	<option value="cheetah2">Cheetah2</option>
+	<option value="hp4200-64bit-02">hp4200-64bit-02</option>
+	<option value="sharon-test2k">Sharon-test2k</option>
+	<option value="test_1">Test_1</option>
+	<option value="test_2">Test_2</option>
+	<option value="test_3">Test_3</option>
+	<option value="test_4">Test_4</option>
+	<option value="test-900">Test-900</option>
+	<option value="testbox-aces2k">Testbox-aces2k</option>
+	<option value="testbox_ibm">Testbox_ibm</option>
+	<option value="testbox-oracle">Testbox-oracle</option>
+	<option value="testboxsql2">Testboxsql2</option>
+	<option value="testbox-temp1">Testbox-temp1</option>
+	<option value="testbox-temp3">Testbox-temp3</option>
+	<option value="testbox-tunnel">Testbox-tunnel</option>
+	<option value="testbox_xp">Testbox_xp</option>
+	<option value="testx32-2">Testx32-2</option>
+	<option value="test-32on64-1">test-32on64-1</option>
+	<option value="test-32on64-2">test-32on64-2</option>
+</select>
+
+&nbsp;
+<select size="16" name="TheMachineList2" size = 14 multiple border="4"> 
+	<option value="testrack-1">testrack-1</option>
+	<option value="testrack-2">testrack-2</option>
+	<option value="testrack-3">testrack-3</option>
+	<option value="testrack-4">testrack-4</option>
+	<option value="testrack-5">testrack-5</option>
+	<option value="testrack-6">testrack-6</option>
+	<option value="testrack-7">testrack-7</option>
+	<option value="testrack-8">testrack-8</option>
+	<option value="testrack-9">testrack-9</option>
+	<option value="testrack-10">testrack-10</option>
+	<option value="testrack-11">testrack-11</option>
+	<option value="testrack-12">testrack-12</option>
+	<option value="testrack-13">testrack-13</option>
+	<option value="testrack-14">testrack-14</option>
+	<option value="testx64-1">Testx64-1</option>
+	<option value="testx64-2">Testx64-2</option>
+	<option value="testx64-3">Testx64-3</option>
+	<option value="testx64-4">Testx64-4</option>
+	<option value="testx64-5">Testx64-5</option>
+</select>
+<br>
+<br>
+&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;
+<input id=runbutton class="button" type="button" value="   Start   " name="ok_button" 
+onClick="RunScript">
+&nbsp;&nbsp;&nbsp;
+<input id=runbutton class="button" type="button" value="   Exit   " name="cancel_button" 
+onClick="CancelScript">
+
+</BODY>
+</html>
